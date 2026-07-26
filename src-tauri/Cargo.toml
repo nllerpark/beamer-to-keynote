@@ -1,0 +1,19 @@
+[package]
+name = "texkey"
+version = "0.3.0"
+description = "Convert PDF and Beamer TeX presentations into Keynote decks"
+authors = ["Park Junhu <nller.park@snu.ac.kr>"]
+license = "BSD-3-Clause"
+edition = "2024"
+
+[lib]
+name = "texkey_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.6.2", features = [] }
+
+[dependencies]
+pdfium-render = { version = "0.9.3", default-features = false, features = ["pdfium_latest", "thread_safe"] }
+serde = { version = "1.0", features = ["derive"] }
+tauri = { version = "2.11.2", features = ["macos-private-api"] }

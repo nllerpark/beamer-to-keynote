@@ -1,0 +1,2 @@
+"CFBundleDisplayName" = "TeXKey";
+"NSAppleEventsUsageDescription" = "TeXKey requires permission to construct Keynote slides from the selected source document.";

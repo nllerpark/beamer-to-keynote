@@ -1,0 +1,438 @@
+<!doctype html>
+<html lang="en" data-theme="system">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <title>TeXKey</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="titlebar" data-tauri-drag-region>
+        <div class="traffic-clearance" data-tauri-drag-region></div>
+
+        <div class="brand-lockup" data-tauri-drag-region>
+          <div class="wordmark" aria-label="TeXKey">
+            <span aria-hidden="true"><b>T<span class="lower-e">E</span>X</b>Key</span>
+          </div>
+          <span class="brand-rule" aria-hidden="true"></span>
+          <span class="brand-descriptor" data-i18n="app.descriptor">Beamer &amp; PDF → Keynote</span>
+        </div>
+
+        <div class="title-actions">
+          <div class="language-picker">
+            <svg class="language-mark" viewBox="0 0 20 20" aria-hidden="true">
+              <circle cx="10" cy="10" r="7"></circle>
+              <path d="M3.5 10h13M10 3c2 2 3 4.3 3 7s-1 5-3 7c-2-2-3-4.3-3-7s1-5 3-7Z"></path>
+            </svg>
+            <select
+              id="language-select"
+              data-i18n-aria="language.label"
+              aria-label="Language"
+            >
+              <option value="system" data-i18n="language.system">System</option>
+              <option value="en" data-i18n="language.english">English</option>
+              <option value="ko" data-i18n="language.korean">한국어</option>
+            </select>
+            <svg class="language-chevron" viewBox="0 0 12 12" aria-hidden="true">
+              <path d="m3.5 4.5 2.5 2.5 2.5-2.5"></path>
+            </svg>
+          </div>
+
+          <div
+            id="appearance-switch"
+            class="appearance-switch"
+            role="radiogroup"
+            data-i18n-aria="appearance.label"
+            aria-label="Appearance"
+          >
+            <button
+              class="appearance-button active"
+              type="button"
+              role="radio"
+              aria-checked="true"
+              data-theme-value="system"
+              data-i18n-title="appearance.system"
+              data-i18n-aria="appearance.system"
+              title="System"
+              aria-label="System"
+            >
+              <svg viewBox="0 0 20 20" aria-hidden="true">
+                <rect x="3" y="3.5" width="14" height="10" rx="1.8"></rect>
+                <path d="M7.5 16.5h5M10 13.5v3"></path>
+              </svg>
+            </button>
+            <button
+              class="appearance-button"
+              type="button"
+              role="radio"
+              aria-checked="false"
+              data-theme-value="light"
+              data-i18n-title="appearance.light"
+              data-i18n-aria="appearance.light"
+              title="Light"
+              aria-label="Light"
+            >
+              <svg viewBox="0 0 20 20" aria-hidden="true">
+                <circle cx="10" cy="10" r="3.2"></circle>
+                <path d="M10 2v2M10 16v2M2 10h2M16 10h2M4.3 4.3l1.4 1.4M14.3 14.3l1.4 1.4M15.7 4.3l-1.4 1.4M5.7 14.3l-1.4 1.4"></path>
+              </svg>
+            </button>
+            <button
+              class="appearance-button"
+              type="button"
+              role="radio"
+              aria-checked="false"
+              data-theme-value="dark"
+              data-i18n-title="appearance.dark"
+              data-i18n-aria="appearance.dark"
+              title="Dark"
+              aria-label="Dark"
+            >
+              <svg viewBox="0 0 20 20" aria-hidden="true">
+                <path d="M15.8 12.8A6.5 6.5 0 0 1 7.2 4.2a6.5 6.5 0 1 0 8.6 8.6Z"></path>
+              </svg>
+            </button>
+          </div>
+
+          <button
+            class="icon-button"
+            id="clear-button"
+            type="button"
+            hidden
+            data-i18n-title="source.clear"
+            data-i18n-aria="source.clear"
+            title="Clear selection"
+            aria-label="Clear selection"
+          >
+            <svg viewBox="0 0 20 20" aria-hidden="true">
+              <path d="m6 6 8 8M14 6l-8 8"></path>
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <main class="workbench">
+        <section class="source-pane">
+          <header class="pane-heading">
+            <span class="folio">01 · SOURCE</span>
+            <h1 data-i18n="source.heading">Source document</h1>
+            <p data-i18n="source.description">
+              Begin with a Beamer source or an existing PDF slide deck.
+            </p>
+          </header>
+
+          <div id="empty-state" class="empty-state">
+            <button id="drop-zone" class="drop-zone" type="button">
+              <div class="source-glyph" aria-hidden="true">
+                <span class="glyph-rule"></span>
+                <strong>T<span>E</span>X</strong>
+                <small>PDF</small>
+              </div>
+              <span class="drop-kicker" data-i18n="source.dropKicker">SOURCE INPUT</span>
+              <h2 data-i18n="source.dropTitle">Drop a Beamer TeX or PDF here</h2>
+              <p data-i18n="source.dropDescription">
+                TeX is typeset directly to vector slides without an intermediate PDF.
+              </p>
+              <span class="secondary-button" data-i18n="source.chooseFile">Choose file</span>
+            </button>
+          </div>
+
+          <div id="file-state" class="file-state" hidden>
+            <article class="document-card">
+              <span id="source-kind" class="document-folio">TEX</span>
+              <div class="document-icon" aria-hidden="true">
+                <svg viewBox="0 0 36 44">
+                  <path d="M6 1h17l7 7v35H6z"></path>
+                  <path d="M23 1v8h8M11 19h14M11 25h14M11 31h9"></path>
+                </svg>
+              </div>
+              <div class="file-copy">
+                <span class="eyebrow" data-i18n="source.selected">Selected document</span>
+                <h2 id="file-name">—</h2>
+                <p id="file-meta" data-i18n="source.preparing">Preparing source…</p>
+              </div>
+              <button id="replace-button" class="quiet-button" type="button" data-i18n="source.replace">
+                Choose another file
+              </button>
+            </article>
+
+            <section class="inspection-card">
+              <div class="section-heading">
+                <div>
+                  <span class="folio">02 · PREFLIGHT</span>
+                  <h2 data-i18n="inspection.heading">Readiness inspection</h2>
+                </div>
+                <span id="readiness-badge" class="badge scanning">
+                  <i></i><span data-i18n="inspection.analyzing">Analyzing</span>
+                </span>
+              </div>
+
+              <div class="metrics">
+                <div class="metric">
+                  <span class="metric-index">01</span>
+                  <span class="metric-symbol">T</span>
+                  <div>
+                    <strong id="text-count">—</strong>
+                    <span data-i18n="inspection.textObjects">Editable text objects</span>
+                  </div>
+                  <i aria-hidden="true">✓</i>
+                </div>
+                <div class="metric">
+                  <span class="metric-index">02</span>
+                  <span class="metric-symbol vector-symbol">◇</span>
+                  <div>
+                    <strong id="page-count">—</strong>
+                    <span data-i18n="inspection.slidePages">Slide pages</span>
+                  </div>
+                  <i aria-hidden="true">✓</i>
+                </div>
+                <div class="metric">
+                  <span class="metric-index">03</span>
+                  <span class="metric-symbol font-symbol">Aa</span>
+                  <div>
+                    <strong id="font-count">—</strong>
+                    <span data-i18n="inspection.fonts">Document fonts</span>
+                  </div>
+                  <i aria-hidden="true">✓</i>
+                </div>
+              </div>
+
+              <p id="font-list" class="font-list"></p>
+
+              <div id="warning-row" class="warning-row" hidden>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 3 2.5 20h19z"></path>
+                  <path d="M12 9v5M12 17.5v.1"></path>
+                </svg>
+                <div>
+                  <strong id="font-warning-title" data-i18n="inspection.fontWarning">Some fonts may be substituted.</strong>
+                  <span id="missing-fonts"></span>
+                </div>
+                <button id="font-help-button" class="text-button" type="button" data-i18n="common.details">
+                  Details
+                </button>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <aside class="brief-pane">
+          <header class="brief-heading">
+            <span class="folio">03 · OUTPUT</span>
+            <h2 data-i18n="brief.heading">Conversion brief</h2>
+            <p data-i18n="brief.description">A precise, self-contained Keynote document.</p>
+          </header>
+
+          <div class="brief-controls">
+            <div class="control-block">
+              <label for="conversion-mode" data-i18n="brief.method">Method</label>
+              <div class="select-frame">
+                <select id="conversion-mode" aria-label="Conversion method" data-i18n-aria="brief.method" disabled>
+                  <option value="auto" data-i18n="method.auto">Selected automatically</option>
+                </select>
+                <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m7 8 3 3 3-3"></path></svg>
+              </div>
+              <p id="mode-help" data-i18n="method.autoHelp">
+                The available method follows the selected source.
+              </p>
+            </div>
+
+            <div class="control-block">
+              <span class="control-label" data-i18n="brief.destination">Destination</span>
+              <button id="output-button" class="value-button" type="button">
+                <svg viewBox="0 0 20 20" aria-hidden="true">
+                  <path d="M2.5 5.5h6l1.6 1.8h7.4v8.2h-15z"></path>
+                </svg>
+                <span id="output-label" data-i18n="brief.sameFolder">Same folder as source</span>
+                <svg class="chevron" viewBox="0 0 20 20" aria-hidden="true"><path d="m7 8 3 3 3-3"></path></svg>
+              </button>
+            </div>
+
+            <label class="toggle-row">
+              <span>
+                <strong data-i18n="brief.openAfter">Open in Keynote after completion</strong>
+                <small data-i18n="brief.openAfterHelp">Show the finished deck immediately.</small>
+              </span>
+              <input id="open-toggle" type="checkbox" checked />
+              <i aria-hidden="true"></i>
+            </label>
+          </div>
+
+          <section id="progress-panel" class="progress-panel" hidden aria-live="polite">
+            <div class="progress-copy">
+              <strong id="progress-title" data-i18n="progress.preparing">Preparing conversion…</strong>
+              <span id="progress-detail"></span>
+            </div>
+            <div class="progress-track"><i id="progress-bar"></i></div>
+          </section>
+
+          <div class="primary-action">
+            <button id="convert-button" class="primary-button" type="button" disabled>
+              <span data-i18n="action.convert">Convert to Keynote</span>
+              <svg viewBox="0 0 20 20" aria-hidden="true">
+                <path d="M4 10h11M11 6l4 4-4 4"></path>
+              </svg>
+            </button>
+            <p data-i18n="action.note">Nothing is uploaded. Conversion stays on this Mac.</p>
+          </div>
+        </aside>
+      </main>
+
+      <footer class="statusbar">
+        <div class="environment">
+          <span id="keynote-status"><i></i><b>Keynote</b><em data-i18n="status.checking">Checking</em></span>
+          <span id="pdfium-status"><i></i><b>PDFium</b><em data-i18n="status.checking">Checking</em></span>
+          <span id="tex-status"><i></i><b>TeX</b><em data-i18n="status.checking">Checking</em></span>
+        </div>
+        <span class="version">TeXKey · v0.3</span>
+      </footer>
+    </div>
+
+    <dialog id="font-risk-dialog" class="risk-dialog" aria-labelledby="font-risk-title">
+      <form method="dialog">
+        <div class="dialog-kicker">
+          <span class="folio">PDF · FONT PREFLIGHT</span>
+          <button
+            class="dialog-close"
+            value="cancel"
+            type="submit"
+            data-i18n-aria="common.close"
+            aria-label="Close"
+          >
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m6 6 8 8M14 6l-8 8"></path></svg>
+          </button>
+        </div>
+        <div class="dialog-heading">
+          <div class="risk-mark" aria-hidden="true">Aa</div>
+          <div>
+            <h2 id="font-risk-title" data-i18n="fontDialog.heading">Missing fonts are embedded in this PDF</h2>
+            <p data-i18n="fontDialog.description">
+              TeXKey can extract them for editable text, but font programs require special care.
+            </p>
+          </div>
+        </div>
+
+        <div class="embedded-fonts">
+          <span data-i18n="fontDialog.available">Embedded fonts available to extract</span>
+          <strong id="extractable-font-list">—</strong>
+        </div>
+
+        <ul class="risk-list">
+          <li>
+            <i>01</i>
+            <span>
+              <strong data-i18n="fontDialog.licenseTitle">License responsibility</strong>
+              <small data-i18n="fontDialog.licenseBody">
+                The PDF may not grant permission to install or reuse its fonts.
+              </small>
+            </span>
+          </li>
+          <li>
+            <i>02</i>
+            <span>
+              <strong data-i18n="fontDialog.subsetTitle">Subset limitations</strong>
+              <small data-i18n="fontDialog.subsetBody">
+                Embedded subsets may contain only the glyphs used in this PDF.
+              </small>
+            </span>
+          </li>
+          <li>
+            <i>03</i>
+            <span>
+              <strong data-i18n="fontDialog.securityTitle">Untrusted font data</strong>
+              <small data-i18n="fontDialog.securityBody">
+                Extracted fonts are installed for your user account and remain after conversion.
+              </small>
+            </span>
+          </li>
+        </ul>
+
+        <p id="font-format-note" class="format-note" data-i18n="fontDialog.formatNote">
+          Only embedded OpenType or TrueType programs are installed. Non-embedded, Type 3, and unsupported fonts are skipped.
+        </p>
+
+        <div class="dialog-actions">
+          <button id="skip-font-button" class="secondary-action" value="skip" type="submit">
+            <span data-i18n="fontDialog.skip">Continue without extraction</span>
+          </button>
+          <button id="extract-font-button" class="primary-action-button" value="extract" type="submit">
+            <span data-i18n="fontDialog.extract">Extract fonts and continue</span>
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v10M6 9l4 4 4-4M4 16h12"></path></svg>
+          </button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="tex-font-dialog" class="risk-dialog tex-font-dialog" aria-labelledby="tex-font-risk-title">
+      <form method="dialog">
+        <div class="dialog-kicker">
+          <span class="folio">TEX · FONT PREFLIGHT</span>
+          <button
+            class="dialog-close"
+            value="cancel"
+            type="submit"
+            data-i18n-aria="common.close"
+            aria-label="Close"
+          >
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m6 6 8 8M14 6l-8 8"></path></svg>
+          </button>
+        </div>
+
+        <div class="dialog-heading">
+          <div class="risk-mark" aria-hidden="true">Tt</div>
+          <div>
+            <h2 id="tex-font-risk-title" data-i18n="texFontDialog.heading">TeX system fonts require attention</h2>
+            <p data-i18n="texFontDialog.description">
+              The source explicitly names fonts that TeXKey could not match to fonts installed on this Mac.
+            </p>
+          </div>
+        </div>
+
+        <div class="embedded-fonts">
+          <span data-i18n="texFontDialog.missing">Fonts not found in macOS</span>
+          <strong id="tex-missing-font-list">—</strong>
+        </div>
+
+        <ul class="risk-list compact-risk-list">
+          <li>
+            <i>01</i>
+            <span>
+              <strong data-i18n="texFontDialog.guidanceTitle">Install before typesetting</strong>
+              <small data-i18n="texFontDialog.guidanceBody">
+                Install these families in Font Book, then select the source again.
+              </small>
+            </span>
+          </li>
+          <li>
+            <i>02</i>
+            <span>
+              <strong data-i18n="texFontDialog.scopeTitle">Static preflight</strong>
+              <small data-i18n="texFontDialog.scopeBody">
+                Fonts selected dynamically by macros can be diagnosed only by the typesetting log.
+              </small>
+            </span>
+          </li>
+        </ul>
+
+        <p class="format-note" data-i18n="texFontDialog.packageNote">
+          Fonts supplied by a TeX package may still resolve during typesetting. Continuing can nevertheless fail or produce a substituted typeface.
+        </p>
+
+        <div class="dialog-actions">
+          <button class="secondary-action" value="cancel" type="submit">
+            <span data-i18n="common.cancel">Cancel</span>
+          </button>
+          <button class="primary-action-button" value="continue" type="submit">
+            <span data-i18n="texFontDialog.continue">Continue anyway</span>
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h12M11 5l5 5-5 5"></path></svg>
+          </button>
+        </div>
+      </form>
+    </dialog>
+
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

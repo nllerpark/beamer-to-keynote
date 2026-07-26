@@ -1,0 +1,8 @@
+{
+  "productName": "TeXKey BSD",
+  "identifier": "app.texkey.converter.bsd",
+  "bundle": {
+    "shortDescription": "BSD distribution using an external TeX toolchain",
+    "longDescription": "PDF conversion is self-contained; direct Beamer conversion uses Tectonic and dvisvgm installed on the system."
+  }
+}

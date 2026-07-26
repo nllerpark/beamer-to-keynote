@@ -1,0 +1,12 @@
+{
+  "bundle": {
+    "externalBin": [
+      "binaries/tectonic",
+      "binaries/dvisvgm"
+    ],
+    "resources": {
+      "resources/dvisvgm-texmf/": "dvisvgm-texmf/",
+      "resources/tex-engines/": "tex-engines/"
+    }
+  }
+}

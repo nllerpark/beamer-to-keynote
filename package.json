@@ -1,0 +1,20 @@
+{
+  "name": "texkey",
+  "private": true,
+  "version": "0.3.0",
+  "author": "Park Junhu <nller.park@snu.ac.kr>",
+  "license": "BSD-3-Clause",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build --target aarch64-apple-darwin --config src-tauri/tauri.full.conf.json && sh scripts/apply-dmg-icon.sh",
+    "build:unsigned": "tauri build --target aarch64-apple-darwin --no-sign --config src-tauri/tauri.full.conf.json && sh scripts/apply-dmg-icon.sh",
+    "build:bsd": "tauri build --target aarch64-apple-darwin --config src-tauri/tauri.bsd.conf.json && sh scripts/apply-dmg-icon.sh",
+    "build:bsd:unsigned": "tauri build --target aarch64-apple-darwin --no-sign --config src-tauri/tauri.bsd.conf.json && sh scripts/apply-dmg-icon.sh",
+    "package:source": "sh scripts/package-source.sh",
+    "release:macos": "sh scripts/notarize-macos-release.sh"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.8.5"
+  }
+}
