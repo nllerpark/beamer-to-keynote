@@ -1,8 +1,6 @@
 {
-  "productName": "TeXKey BSD",
-  "identifier": "app.texkey.converter.bsd",
   "bundle": {
-    "shortDescription": "BSD distribution using an external TeX toolchain",
-    "longDescription": "PDF conversion is self-contained; direct Beamer conversion uses Tectonic and dvisvgm installed on the system."
+    "shortDescription": "Convert Beamer and PDF presentations to Keynote",
+    "longDescription": "PDF conversion is self-contained. Direct Beamer conversion uses XeLaTeX or LuaLaTeX, dvisvgm, and TeX packages supplied by a system MacTeX installation."
   }
 }

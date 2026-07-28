@@ -1,4 +1,5 @@
 mod pdfium_engine;
+mod process_environment;
 mod tex_engine;
 
 use serde::{Deserialize, Serialize};
@@ -20,6 +21,8 @@ struct EnvironmentStatus {
     native_engine_ready: bool,
     tex_engine_ready: bool,
     tex_engine_bundled: bool,
+    tex_engine_paths: Vec<String>,
+    missing_tex_tools: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -120,12 +123,34 @@ fn pdfium_library_path(app: &AppHandle) -> Result<PathBuf, String> {
 
 #[tauri::command]
 fn environment_status(app: AppHandle) -> EnvironmentStatus {
-    let bundled_tex = bundled_tool_path("tectonic").is_ok() && bundled_tool_path("dvisvgm").is_ok();
+    let tex_tools = ["xelatex", "dvilualatex", "dvisvgm", "kpsewhich"];
+    let resolved_tex_tools = tex_tools
+        .into_iter()
+        .map(|name| (name, system_tool_path(name).ok()))
+        .collect::<Vec<_>>();
+    let mut tex_engine_paths = resolved_tex_tools
+        .iter()
+        .filter_map(|(_, path)| path.as_ref())
+        .map(|path| path.to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+    let mut missing_tex_tools = resolved_tex_tools
+        .iter()
+        .filter(|(_, path)| path.is_none())
+        .map(|(name, _)| (*name).to_owned())
+        .collect::<Vec<_>>();
+    if let Some(path) = process_environment::ghostscript_library_path() {
+        tex_engine_paths.push(path.to_string_lossy().into_owned());
+    } else {
+        missing_tex_tools.push("libgs (brew install ghostscript)".into());
+    }
+
     EnvironmentStatus {
         keynote_installed: keynote_path().is_some(),
         native_engine_ready: pdfium_library_path(&app).is_ok_and(|path| path.is_file()),
-        tex_engine_ready: tool_path("tectonic").is_ok() && tool_path("dvisvgm").is_ok(),
-        tex_engine_bundled: bundled_tex,
+        tex_engine_ready: missing_tex_tools.is_empty(),
+        tex_engine_bundled: false,
+        tex_engine_paths,
+        missing_tex_tools,
     }
 }
 
@@ -462,42 +487,20 @@ fn unique_output_path(source: &Path, output_dir: Option<&str>, mode: ConvertMode
         .unwrap_or(base)
 }
 
-fn bundled_tool_path(name: &str) -> Result<PathBuf, String> {
-    let executable_directory = std::env::current_exe()
-        .ok()
-        .and_then(|path| path.parent().map(Path::to_path_buf));
-    let development = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("binaries")
-        .join(format!("{name}-aarch64-apple-darwin"));
-    executable_directory
-        .into_iter()
-        .map(|path| path.join(name))
-        .chain([development])
-        .find(|path| path.is_file())
-        .ok_or_else(|| format!("{name} 직접 렌더링 엔진이 앱에 포함되지 않았습니다."))
-}
-
-fn tool_path(name: &str) -> Result<PathBuf, String> {
-    let path_candidate = std::env::var_os("PATH").into_iter().flat_map(|paths| {
-        std::env::split_paths(&paths)
-            .map(|directory| directory.join(name))
-            .collect::<Vec<_>>()
-    });
-    let known_candidates = [
-        PathBuf::from("/opt/homebrew/bin").join(name),
-        PathBuf::from("/usr/local/bin").join(name),
-        PathBuf::from("/Library/TeX/texbin").join(name),
-    ];
-    bundled_tool_path(name)
-        .into_iter()
-        .chain(path_candidate)
-        .chain(known_candidates)
+fn system_tool_path(name: &str) -> Result<PathBuf, String> {
+    process_environment::system_tool_candidates(name)
         .find(|path| path.is_file())
         .ok_or_else(|| {
             format!(
-                "{name} 직접 렌더링 엔진을 찾지 못했습니다. TeXKey BSD에서는 brew install tectonic dvisvgm으로 설치해 주세요."
+                "{name} 직접 렌더링 엔진을 찾지 못했습니다. MacTeX를 설치하고 /Library/TeX/texbin이 PATH에서 보이도록 설정한 뒤 TeXKey를 다시 실행해 주세요."
             )
         })
+}
+
+fn ghostscript_library_path() -> Result<PathBuf, String> {
+    process_environment::ghostscript_library_path().ok_or_else(|| {
+        "Ghostscript 공유 라이브러리(libgs)를 찾지 못했습니다. `brew install ghostscript`를 실행한 뒤 TeXKey를 다시 시작해 주세요. dvisvgm이 EPS와 PostScript 요소를 빠짐없이 SVG로 변환하는 데 필요합니다.".into()
+    })
 }
 
 fn install_bundled_fonts(app: &AppHandle, resource_dir: &Path) -> Result<usize, String> {
@@ -596,19 +599,21 @@ async fn convert_pdf(app: AppHandle, request: ConvertRequest) -> Result<ConvertR
                 pdfium_engine::exact_image_manifest(&source, &work, &library)?
             }
             ConvertMode::TexDirect => {
-                let cache = app
-                    .path()
-                    .app_cache_dir()
-                    .map_err(|error| error.to_string())?
-                    .join("tectonic");
+                let home_directory = app.path().home_dir().map_err(|error| error.to_string())?;
+                let xelatex = system_tool_path("xelatex")?;
+                let dvilualatex = system_tool_path("dvilualatex")?;
+                let dvisvgm = system_tool_path("dvisvgm")?;
+                let ghostscript_library = ghostscript_library_path()?;
                 tex_engine::manifest(
                     &source,
                     &work,
-                    &tool_path("tectonic")?,
-                    &tool_path("dvisvgm")?,
-                    &resource_dir.join("tex-engines/texkey-curated.ttb"),
-                    &resource_dir.join("dvisvgm-texmf"),
-                    &cache,
+                    tex_engine::Runtime {
+                        xelatex: &xelatex,
+                        dvilualatex: &dvilualatex,
+                        dvisvgm: &dvisvgm,
+                        ghostscript_library: &ghostscript_library,
+                        home_directory: &home_directory,
+                    },
                 )?
             }
         };

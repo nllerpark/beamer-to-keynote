@@ -206,6 +206,7 @@ function localizeBackendError(error) {
   if (
     raw.includes("PDFium 네이티브 엔진")
     || raw.includes("직접 렌더링 엔진이 앱에 포함되지 않았습니다")
+    || raw.includes("직접 렌더링 엔진을 찾지 못했습니다")
   ) {
     return t("error.engine");
   }
@@ -456,8 +457,11 @@ function renderEnvironmentStatus() {
     elements.texStatus,
     state.env.texEngineReady,
     state.env.texEngineBundled ? "status.ready" : "status.external",
-    "status.unavailable",
+    "status.texMissing",
   );
+  elements.texStatus.title = state.env.texEngineReady
+    ? state.env.texEnginePaths.join("\n")
+    : `${t("status.texMissing")}: ${state.env.missingTexTools.join(", ")}`;
 }
 
 function refreshLocalizedUi() {

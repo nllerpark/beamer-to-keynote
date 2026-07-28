@@ -3,10 +3,27 @@ set -eu
 
 project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 profile=${APPLE_NOTARY_PROFILE:-${1:-}}
+signing_identity=${APPLE_SIGNING_IDENTITY:-Developer ID Application: ITRIX Co., Ltd. (D5UUNR2X89)}
 
 if [ -z "$profile" ]; then
   echo "error: APPLE_NOTARY_PROFILE is required" >&2
   echo "store credentials with xcrun notarytool store-credentials, then retry" >&2
+  exit 1
+fi
+
+preflight_failed=0
+if ! security find-identity -v -p codesigning |
+  grep -F "\"$signing_identity\"" >/dev/null; then
+  echo "error: code-signing identity is not installed: $signing_identity" >&2
+  echo "install the Developer ID Application certificate and its private key" >&2
+  preflight_failed=1
+fi
+if ! xcrun notarytool history --keychain-profile "$profile" >/dev/null 2>&1; then
+  echo "error: notarytool keychain profile is unavailable or invalid: $profile" >&2
+  echo "store credentials with xcrun notarytool store-credentials $profile" >&2
+  preflight_failed=1
+fi
+if [ "$preflight_failed" -ne 0 ]; then
   exit 1
 fi
 

@@ -3,14 +3,15 @@
 TeXKey is a native macOS application for translating Beamer sources and
 existing PDF slide decks into Apple Keynote documents. Its interface is built
 with Tauri, while document analysis and conversion are implemented in Rust.
-The standard distribution carries its rendering engines with it and requires
-no Python, Node.js, TeX Live, or auxiliary PDF installation at run time.
+PDF conversion is self-contained. Direct Beamer conversion uses a MacTeX
+installation on the same Mac.
 
 ## Direct Beamer rendering
 
 ![TeXKey rendering a Beamer source directly into Keynote](docs/texkey-demo.gif)
 
-When given a Beamer `.tex` source, TeXKey typesets the presentation to XDV and
+When given a Beamer `.tex` source, TeXKey typesets the presentation with
+XeLaTeX or LuaLaTeX and sends its XDV or DVI output directly to dvisvgm. It
 constructs vector Keynote slides without producing an intermediate PDF.
 
 For existing PDFs, TeXKey offers two complementary interpretations:
@@ -54,58 +55,89 @@ The consent notice states the following risks:
 
 The exact-appearance mode does not require font extraction or installation.
 
-## Distribution profiles
+## Runtime requirements
 
-TeXKey is issued in two macOS profiles.
+Apple Keynote is required for every conversion because TeXKey constructs the
+finished `.key` document through Keynote automation.
 
-### TeXKey
+PDF-to-Keynote conversion otherwise uses the PDFium framework bundled with
+TeXKey and does not require a TeX installation.
 
-The complete profile includes Tectonic, dvisvgm, and an offline TeX resource
-set. It is intended as the self-contained distribution: Beamer and PDF
-conversion work without an external typesetting installation.
-
-The TeXKey source code is licensed under BSD 3-Clause. The bundled dvisvgm
-executable remains licensed under GPLv3 or later. A distribution containing
-dvisvgm must comply with the GPLv3-or-later terms applicable to that component.
-Other bundled components retain their respective upstream licences.
-
-### TeXKey BSD
-
-The BSD profile omits the bundled TeX executables and offline TeX resource
-payload. PDF conversion remains self-contained. Direct Beamer conversion uses
-`tectonic` and `dvisvgm` installed separately on the Mac.
-
-The simplest supported installation is:
+Direct `.tex`-to-Keynote conversion requires a
+[full MacTeX installation](https://www.tug.org/mactex/mactex-download.html). It
+uses the system copies of XeLaTeX, LuaLaTeX, dvisvgm, Beamer, TikZ/PGF,
+tcolorbox, and any other package imported by the source document. Install
+MacTeX and the Ghostscript shared library used by dvisvgm:
 
 ```sh
-brew install tectonic dvisvgm
+brew install ghostscript
 ```
 
-Homebrew’s dvisvgm formula installs its TeX Live dependency. If a complete
-MacTeX installation already provides `/Library/TeX/texbin/dvisvgm`, only
-Tectonic is additionally required:
+Then add the following line to the shell profile used by Terminal:
 
 ```sh
-brew install tectonic
+export PATH="/Library/TeX/texbin:$PATH"
 ```
 
-The first external Tectonic run may retrieve its support bundle over the
-network. TeXKey searches the application bundle, `PATH`,
-`/opt/homebrew/bin`, `/usr/local/bin`, and `/Library/TeX/texbin`.
+TeXKey also prepends `/Library/TeX/texbin` itself when it is launched from
+Finder, because GUI applications do not normally inherit the interactive
+shell PATH. The installation is ready when these checks all return paths:
+
+```sh
+command -v xelatex
+command -v dvilualatex
+command -v kpsewhich
+command -v dvisvgm
+kpsewhich beamer.cls
+kpsewhich pgf.sty
+kpsewhich tikzlibraryfit.code.tex
+kpsewhich tcolorbox.sty
+test -f "$(brew --prefix ghostscript)/lib/libgs.dylib"
+```
+
+A full current MacTeX installation includes the TeX components. Its
+Ghostscript command-line executable does not provide the shared `libgs`
+library that dvisvgm loads for EPS and PostScript specials, so the Homebrew
+Ghostscript installation is also required. If an existing minimal TeX Live
+installation reports a missing package, install the corresponding TeX Live
+package with `tlmgr`; TeXKey does not download or modify the system TeX
+installation.
+
+This covers ordinary Beamer, TikZ/PGF, PGFPlots, tcolorbox, and `listings`
+documents. Features that launch non-TeX programs remain external requirements:
+for example `minted` needs Python and Pygments, and gnuplot-backed plots need
+gnuplot. TeXKey itself does not use Python, bundle gnuplot, or enable these
+external execution workflows.
+
+### Reproducing the original Beamer appearance
+
+To reproduce a PDF previously built from the same Beamer source, the
+conversion Mac must provide the same TeX package versions, system fonts,
+project-local `.sty` files, images, and other source assets that were used for
+the original build. Differences in that typesetting environment can change
+font metrics, line breaks, and layout.
+
+TeXKey converts the resulting XDV or DVI glyphs directly to SVG outlines.
+LuaLaTeX documents use `dvilualatex`, not a LuaLaTeX-generated PDF. Once the
+Keynote document has been created, those outlined glyphs preserve their
+appearance on another Mac without requiring the original TeX fonts. When an
+existing PDF is the visual source of truth, the exact-appearance PDF mode
+provides the strongest reproduction because it does not re-typeset the Beamer
+source.
 
 ## System requirements
 
 - Apple Silicon Mac running macOS 12 or later
 - Apple Keynote
+- MacTeX for direct Beamer `.tex` conversion
+- Homebrew Ghostscript for complete EPS/PostScript-to-SVG rendering
 - Rust, Node.js, and Xcode Command Line Tools for development builds
-- No additional run-time installation for the complete TeXKey profile
-- `tectonic` and `dvisvgm` for direct Beamer conversion in TeXKey BSD
 
 ## Building from source
 
 A source build requires Git, the stable Rust toolchain, a current Node.js LTS
-release, npm, and Xcode Command Line Tools. The checked-in PDFium framework and
-the complete-profile TeX executables presently target Apple Silicon.
+release, npm, and Xcode Command Line Tools. The checked-in PDFium framework
+presently targets Apple Silicon.
 
 Begin with a clean checkout:
 
@@ -121,22 +153,22 @@ Run the development application:
 npm run dev
 ```
 
-Create an unsigned complete distribution:
+Create an unsigned local test distribution:
 
 ```sh
 npm run build:unsigned
 ```
 
-Create an unsigned BSD distribution:
-
-```sh
-npm run build:bsd:unsigned
-```
+Unsigned artifacts are for local development and QA only. Gatekeeper will
+reject an unsigned download and may show a warning that Apple cannot check it
+for malicious software. TeXKey cannot display recovery instructions from
+inside the app because Gatekeeper blocks the process before it launches. Do
+not distribute an unsigned artifact to end users.
 
 The resulting application and DMG are written below
-`src-tauri/target/aarch64-apple-darwin/release/bundle/`. The BSD build itself
-does not require a TeX installation, but direct Beamer conversion in the
-resulting application requires the external tools described above.
+`src-tauri/target/aarch64-apple-darwin/release/bundle/`. Building the app
+itself does not require MacTeX, but direct Beamer conversion in the resulting
+application does.
 
 ## Source release archive
 
@@ -153,31 +185,23 @@ release, run the command from the tagged, clean commit and attach both files to
 the release. Hosting services may also provide their own automatic archives
 for the tag.
 
-This archive contains the TeXKey repository at the selected commit. It is not
-a substitute for the corresponding source required for bundled GPL software.
-The complete-profile release must also retain the dvisvgm source information
-recorded in `src-tauri/resources/tex-engines/DVISVGM-SOURCE.md`.
+This archive contains the TeXKey repository at the selected commit.
 
 ## Signed macOS builds
 
-Build the complete profile:
+Build the signed BSD-licensed application:
 
 ```sh
 npm run build
 ```
 
-Build the external-tool BSD profile:
-
-```sh
-npm run build:bsd
-```
-
 Artifacts are written below
-`src-tauri/target/aarch64-apple-darwin/release/bundle/`. Both profiles use the
-configured ITRIX Developer ID identity to sign the application and DMG. These
-build commands do not submit the result for Apple notarization.
+`src-tauri/target/aarch64-apple-darwin/release/bundle/`. The build uses the
+configured ITRIX Developer ID identity to sign the application and DMG. The
+regular build command does not submit the result for Apple notarization.
+End-user releases must use the notarized release command below.
 
-Notarization remains available as an optional release operation:
+Create a notarized end-user release:
 
 ```sh
 xcrun notarytool store-credentials TeXKey \
@@ -187,15 +211,17 @@ xcrun notarytool store-credentials TeXKey \
 APPLE_NOTARY_PROFILE=TeXKey npm run release:macos
 ```
 
-The release script builds and signs the complete profile, creates the source
+The release script builds and signs the application, creates the source
 archive and checksum, submits the DMG, waits for Apple’s response, staples the
-ticket, and verifies the resulting artifact.
+ticket, and verifies the resulting artifact with both `codesign` and
+Gatekeeper. It fails before building when the configured Developer ID
+Application certificate and private key are not installed.
 
 ## Repository structure
 
 - `src/` — the Stitch-informed macOS interface and locale resources
 - `src-tauri/src/pdfium_engine.rs` — character-level PDF reconstruction
-- `src-tauri/src/tex_engine.rs` — direct XDV-to-vector Beamer rendering
+- `src-tauri/src/tex_engine.rs` — direct DVI/XDV-to-vector Beamer rendering
 - `src-tauri/resources/pdfium/` — the bundled PDFium engine and notices
 - `src-tauri/resources/fonts/` — the bundled Libertinus family
 - `keynote_editable_import.applescript` — native Keynote object construction
@@ -205,7 +231,7 @@ ticket, and verifies the resulting artifact.
 Copyright © 2026 Park Junhu (`nller.park@snu.ac.kr`).
 
 TeXKey source code is distributed under the
-[BSD 3-Clause License](LICENSE). PDFium, Tectonic, dvisvgm, TeX resources, and
-fonts retain their own licences. See the notices included with each bundled
-component. A binary distribution that includes dvisvgm is subject to the
-GPLv3-or-later conditions applicable to dvisvgm.
+[BSD 3-Clause License](LICENSE). Bundled PDFium and fonts retain their own
+licences; their notices are included with the application. MacTeX, XeLaTeX,
+LuaLaTeX, dvisvgm, Ghostscript, and TeX packages are system dependencies and
+are not redistributed inside TeXKey.
