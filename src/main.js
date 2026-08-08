@@ -267,12 +267,16 @@ async function loadSource(path) {
 
   if (kind === "tex") {
     try {
+      // Re-probe rather than reusing the cached status: a dependency installed
+      // while TeXKey was open would otherwise stay invisible until relaunch,
+      // leaving the convert button disabled with no explanation.
       const [env, info] = await Promise.all([
-        state.env || invoke("environment_status"),
+        invoke("environment_status"),
         invoke("inspect_tex", { path }),
       ]);
       state.env = env;
       state.info = info;
+      renderEnvironmentStatus();
       renderSourceInfo();
       updateConvertAvailability();
     } catch (error) {
@@ -459,9 +463,27 @@ function renderEnvironmentStatus() {
     state.env.texEngineBundled ? "status.ready" : "status.external",
     "status.texMissing",
   );
+  // Name the missing tools inline. Burying them in a title attribute meant the
+  // one actionable detail was invisible unless the user thought to hover.
+  const missing = state.env.missingTexTools || [];
+  if (missing.length) {
+    elements.texStatus.querySelector("em").textContent = missing.join(", ");
+  }
   elements.texStatus.title = state.env.texEngineReady
     ? state.env.texEnginePaths.join("\n")
-    : `${t("status.texMissing")}: ${state.env.missingTexTools.join(", ")}`;
+    : `${t("status.texMissing")}: ${missing.join(", ")}`;
+}
+
+// Dependencies can appear after launch; let the pill be re-probed on demand.
+async function recheckEnvironment() {
+  if (!invoke) return;
+  try {
+    state.env = await invoke("environment_status");
+    renderEnvironmentStatus();
+    updateConvertAvailability();
+  } catch (error) {
+    showToast(localizeBackendError(error), 7000);
+  }
 }
 
 function refreshLocalizedUi() {
@@ -491,11 +513,25 @@ function refreshLocalizedUi() {
   renderEnvironmentStatus();
 }
 
+// Read the version from the bundle rather than hardcoding it in the markup,
+// where it silently drifts behind each release.
+async function showAppVersion() {
+  const label = $("app-version");
+  if (!label) return;
+  try {
+    const version = await window.__TAURI__?.app?.getVersion?.();
+    label.textContent = version ? `TeXKey · v${version}` : "TeXKey";
+  } catch {
+    label.textContent = "TeXKey";
+  }
+}
+
 async function boot() {
   applyTranslations();
   elements.language.value = getLanguagePreference();
   setAppearance(savedAppearance(), false);
   configureMode(null);
+  showAppVersion();
 
   if (!invoke) return;
 
@@ -531,6 +567,8 @@ $("replace-button").addEventListener("click", chooseSource);
 elements.clear.addEventListener("click", clearSelection);
 $("output-button").addEventListener("click", chooseOutput);
 elements.convert.addEventListener("click", startConversion);
+elements.texStatus.addEventListener("click", recheckEnvironment);
+elements.texStatus.style.cursor = "pointer";
 $("font-help-button").addEventListener("click", () => {
   const opened =
     state.kind === "tex" ? openTexFontDialog(false) : openFontRiskDialog(false);

@@ -1,6 +1,7 @@
 use crate::{ManifestResult, process_environment::configure_tex_process};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use std::{
+    ffi::{OsStr, OsString},
     fs,
     os::unix::fs::symlink,
     path::{Path, PathBuf},
@@ -87,7 +88,48 @@ fn bitmap_mime_type(path: &Path) -> Option<&'static str> {
     }
 }
 
-fn embed_linked_bitmaps(svg_path: &Path) -> Result<(), String> {
+/// Finds a bitmap the SVG refers to by a path that may not resolve inside the
+/// workspace. dvisvgm records whatever name the document used, so an asset
+/// reached through `\graphicspath` lands here as a bare filename. Searching the
+/// source tree recovers it instead of aborting the conversion.
+fn locate_linked_bitmap(reference: &str, search_roots: &[PathBuf]) -> Option<PathBuf> {
+    for root in search_roots {
+        let direct = root.join(reference);
+        if direct.is_file() {
+            return Some(direct);
+        }
+    }
+
+    let name = Path::new(reference).file_name()?;
+    for root in search_roots {
+        if let Some(found) = find_file_named(root, name, 4) {
+            return Some(found);
+        }
+    }
+    None
+}
+
+fn find_file_named(directory: &Path, name: &OsStr, depth: usize) -> Option<PathBuf> {
+    if depth == 0 {
+        return None;
+    }
+    let entries = fs::read_dir(directory).ok()?;
+    let mut subdirectories = Vec::new();
+    for entry in entries.filter_map(Result::ok) {
+        let path = entry.path();
+        if path.is_file() && entry.file_name() == name {
+            return Some(path);
+        }
+        if path.is_dir() {
+            subdirectories.push(path);
+        }
+    }
+    subdirectories
+        .into_iter()
+        .find_map(|subdirectory| find_file_named(&subdirectory, name, depth - 1))
+}
+
+fn embed_linked_bitmaps(svg_path: &Path, search_roots: &[PathBuf]) -> Result<(), String> {
     let directory = svg_path.parent().unwrap_or_else(|| Path::new("."));
     let mut svg = fs::read_to_string(svg_path).map_err(|error| error.to_string())?;
     let mut changed = false;
@@ -116,17 +158,22 @@ fn embed_linked_bitmaps(svg_path: &Path) -> Result<(), String> {
                 continue;
             }
 
-            let asset = directory.join(&value);
-            let Some(mime_type) = bitmap_mime_type(&asset) else {
+            let Some(mime_type) = bitmap_mime_type(Path::new(&value)) else {
                 search_from = value_end + quote.len_utf8();
                 continue;
             };
-            if !asset.is_file() {
-                return Err(format!(
-                    "SVG가 참조하는 이미지 파일을 찾지 못했습니다: {}",
-                    asset.display()
-                ));
-            }
+            let mut roots = vec![directory.to_path_buf()];
+            roots.extend_from_slice(search_roots);
+            let asset = locate_linked_bitmap(&value, &roots).ok_or_else(|| {
+                format!(
+                    "SVG가 참조하는 이미지 파일을 찾지 못했습니다: {value} (검색 위치: {})",
+                    roots
+                        .iter()
+                        .map(|root| root.display().to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            })?;
             let bytes = fs::read(&asset)
                 .map_err(|error| format!("SVG 이미지 자산을 읽지 못했습니다: {error}"))?;
             let data_uri = format!("data:{mime_type};base64,{}", BASE64.encode(bytes));
@@ -182,9 +229,24 @@ fn preferred_engine_for_source(source: &str) -> TexEngine {
         }
     }
 
+    // Packages that only work under LuaTeX. Loading them with XeLaTeX fails on
+    // an undefined control sequence, so their presence selects the engine.
+    const LUA_ONLY_PACKAGES: [&str; 8] = [
+        "luatexko",
+        "luacode",
+        "luatexbase",
+        "luatexja",
+        "lua-ul",
+        "luacolor",
+        "luamplib",
+        "lualatex-math",
+    ];
+
     if lowercase.contains("lualatex")
         || lowercase.contains("\\directlua")
-        || lowercase.contains("\\usepackage{luacode}")
+        || LUA_ONLY_PACKAGES
+            .iter()
+            .any(|package| lowercase.contains(&format!("{{{package}}}")))
     {
         TexEngine::LuaLatex
     } else {
@@ -236,7 +298,7 @@ fn write_dvisvgm_wrapper(input: &Path, work: &Path) -> Result<PathBuf, String> {
                    }}%\n\
                  }}%\n\
                  {{\\typeout{{TEXKEY: patched Beamer rounded blocks for dvisvgm}}}}%\n\
-                 {{\\PackageWarning{{texkey}}{{Could not patch Beamer rounded blocks}}}}%\n\
+                 {{\\typeout{{TEXKEY-PATCH-FAILED: beamerboxesrounded}}}}%\n\
              }}\n\
              \\makeatother\n\
              \\input{{\"{source_name}\"}}\n"
@@ -259,6 +321,45 @@ fn prepare_dvisvgm_source(input: &Path, work: &Path) -> Result<PathBuf, String> 
     }
 
     write_dvisvgm_wrapper(input, work)
+}
+
+/// Search roots for TeX inputs and graphics.
+///
+/// TeXKey typesets in a private workspace, so a document whose `\graphicspath`
+/// or `\input` paths are relative to a directory above its own — a deck in
+/// `project/decks/` pointing at `{decks/assets/}` — resolves nothing. Both the
+/// source directory and its parent are searched recursively, and the trailing
+/// separator keeps the distribution's own paths intact.
+fn tex_search_path(input: &Path, work: &Path) -> OsString {
+    let source_directory = input.parent().unwrap_or_else(|| Path::new("."));
+    let mut roots = vec![work.to_path_buf(), source_directory.to_path_buf()];
+    if let Some(parent) = source_directory.parent() {
+        roots.push(parent.to_path_buf());
+    }
+
+    let mut value = OsString::new();
+    for root in roots {
+        // `//` asks kpathsea to search the tree recursively.
+        value.push(root.as_os_str());
+        value.push("//:");
+    }
+    // A trailing empty entry appends the distribution's default search path.
+    value
+}
+
+fn configure_tex_inputs(command: &mut Command, input: &Path, work: &Path) {
+    let search_path = tex_search_path(input, work);
+    command
+        .env("TEXINPUTS", &search_path)
+        .env("BIBINPUTS", &search_path)
+        .env("TEXPICTS", &search_path);
+}
+
+/// True when the typesetting log records that the rounded-block patch did not
+/// apply. Previously this was a `\PackageWarning` nobody read.
+fn rounded_block_patch_failed(work: &Path) -> bool {
+    fs::read_to_string(work.join("texkey-direct-wrapper.log"))
+        .is_ok_and(|log| log.contains("TEXKEY-PATCH-FAILED: beamerboxesrounded"))
 }
 
 pub(crate) struct Runtime<'a> {
@@ -290,6 +391,7 @@ pub fn manifest(
     for pass in 1..=2 {
         let mut typeset_command = Command::new(engine_path);
         configure_tex_process(&mut typeset_command, runtime.home_directory);
+        configure_tex_inputs(&mut typeset_command, input, output_directory);
         typeset_command
             .current_dir(output_directory)
             .args([
@@ -349,6 +451,19 @@ pub fn manifest(
         .output()
         .map_err(|error| format!("벡터 엔진을 실행하지 못했습니다: {error}"))?;
     if !dvisvgm_output.status.success() {
+        let details = String::from_utf8_lossy(&dvisvgm_output.stderr).into_owned()
+            + &String::from_utf8_lossy(&dvisvgm_output.stdout);
+        // Beamer's rounded blocks leave a PGF clip scope open, which the wrapper
+        // closes by patching \endbeamerboxesrounded. When that patch does not
+        // apply — Beamer's internals differ between releases — every rounded
+        // block leaks a scope and dvisvgm rejects its own output. Report the
+        // real cause instead of the XML symptom.
+        if details.contains("missing closing tag") && rounded_block_patch_failed(output_directory) {
+            return Err(
+                "이 Beamer 버전에서는 둥근 블록(rounded blocks) 보정 패치를 적용하지 못해 슬라이드 벡터 렌더링에 실패했습니다. 문서 서두에 \\setbeamertemplate{blocks}[default]를 추가해 사각 블록을 사용하면 변환할 수 있습니다."
+                    .into(),
+            );
+        }
         return Err(command_error("슬라이드 벡터 렌더링", &dvisvgm_output));
     }
     let dvisvgm_diagnostics = format!(
@@ -364,8 +479,13 @@ pub fn manifest(
     }
 
     let slides = svg_files(output_directory)?;
+    let source_directory = input.parent().unwrap_or_else(|| Path::new("."));
+    let mut asset_roots = vec![source_directory.to_path_buf()];
+    if let Some(parent) = source_directory.parent() {
+        asset_roots.push(parent.to_path_buf());
+    }
     for slide in &slides {
-        embed_linked_bitmaps(slide)?;
+        embed_linked_bitmaps(slide, &asset_roots)?;
     }
     let first_svg = fs::read_to_string(&slides[0]).map_err(|error| error.to_string())?;
     let width = attribute_number(&first_svg, "width")?.ceil() as u32;
@@ -424,6 +544,18 @@ mod tests {
     #[test]
     fn honors_tex_engine_magic_comment() {
         let source = "% !TeX program = xelatex\n% LuaLaTeX is also supported.";
+        assert_eq!(preferred_engine_for_source(source), TexEngine::XeLatex);
+    }
+
+    #[test]
+    fn selects_lualatex_for_luatex_only_packages() {
+        let source = "\\documentclass{beamer}\n\\usepackage{fontspec}\n\\usepackage{luatexko}";
+        assert_eq!(preferred_engine_for_source(source), TexEngine::LuaLatex);
+    }
+
+    #[test]
+    fn does_not_mistake_similar_package_names_for_luatex() {
+        let source = "\\documentclass{beamer}\n\\usepackage{luatexko-extra-nonexistent}";
         assert_eq!(preferred_engine_for_source(source), TexEngine::XeLatex);
     }
 
