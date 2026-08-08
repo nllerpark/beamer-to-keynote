@@ -102,7 +102,13 @@ fn locate_linked_bitmap(reference: &str, search_roots: &[PathBuf]) -> Option<Pat
 
     let name = Path::new(reference).file_name()?;
     for root in search_roots {
-        if let Some(found) = find_file_named(root, name, 4) {
+        // Shallow on purpose: this runs per referenced bitmap, and an
+        // unbounded walk of a large tree above the document would stall the
+        // conversion for as long as the filesystem takes to answer.
+        if is_too_broad_to_search(root) {
+            continue;
+        }
+        if let Some(found) = find_file_named(root, name, 3) {
             return Some(found);
         }
     }
@@ -332,19 +338,39 @@ fn prepare_dvisvgm_source(input: &Path, work: &Path) -> Result<PathBuf, String> 
 /// separator keeps the distribution's own paths intact.
 fn tex_search_path(input: &Path, work: &Path) -> OsString {
     let source_directory = input.parent().unwrap_or_else(|| Path::new("."));
-    let mut roots = vec![work.to_path_buf(), source_directory.to_path_buf()];
-    if let Some(parent) = source_directory.parent() {
-        roots.push(parent.to_path_buf());
-    }
-
+    // The workspace and the document's own directory are searched recursively;
+    // both are bounded by the project itself.
     let mut value = OsString::new();
-    for root in roots {
-        // `//` asks kpathsea to search the tree recursively.
+    for root in [work, source_directory] {
         value.push(root.as_os_str());
         value.push("//:");
     }
+
+    // The parent is searched one level deep only. A recursive `//` here walks
+    // the entire tree above the document, which stalls on a large, networked,
+    // or cloud-backed directory — and a document sitting directly in the home
+    // directory would drag in everything the user owns. One level is enough for
+    // the case this exists to serve: \graphicspath{{decks/assets/}} supplies the
+    // subdirectory itself, so only its starting point has to be on the path.
+    if let Some(parent) = source_directory.parent() {
+        if !is_too_broad_to_search(parent) {
+            value.push(parent.as_os_str());
+            value.push("/:");
+        }
+    }
+
     // A trailing empty entry appends the distribution's default search path.
     value
+}
+
+/// Guards against putting a filesystem root, one of its immediate children
+/// (`/Users`, `/Volumes`), or the user's home directory on the TeX search path.
+fn is_too_broad_to_search(directory: &Path) -> bool {
+    // Components count the root itself: "/" is 1, "/Users" is 2, "/Users/me" 3.
+    if directory.components().count() <= 2 {
+        return true;
+    }
+    std::env::var_os("HOME").is_some_and(|home| Path::new(&home) == directory)
 }
 
 fn configure_tex_inputs(command: &mut Command, input: &Path, work: &Path) {
@@ -526,7 +552,7 @@ pub fn manifest(
 mod tests {
     use super::{Runtime, TexEngine, attribute_number, manifest, preferred_engine_for_source};
     use crate::process_environment::ghostscript_library_path;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     #[test]
     fn reads_svg_point_dimensions() {
@@ -557,6 +583,38 @@ mod tests {
     fn does_not_mistake_similar_package_names_for_luatex() {
         let source = "\\documentclass{beamer}\n\\usepackage{luatexko-extra-nonexistent}";
         assert_eq!(preferred_engine_for_source(source), TexEngine::XeLatex);
+    }
+
+    #[test]
+    fn searches_the_parent_directory_only_one_level_deep() {
+        let path = super::tex_search_path(
+            Path::new("/projects/report/decks/deck.tex"),
+            Path::new("/tmp/work"),
+        );
+        let path = path.to_string_lossy();
+        // Workspace and source directory recurse; the parent must not.
+        assert!(path.contains("/tmp/work//:"));
+        assert!(path.contains("/projects/report/decks//:"));
+        assert!(path.contains("/projects/report/:"));
+        assert!(
+            !path.contains("/projects/report//:"),
+            "recursive parent search stalls on large trees: {path}"
+        );
+        assert!(path.ends_with(':'), "must append the distribution defaults");
+    }
+
+    #[test]
+    fn refuses_to_search_the_home_directory() {
+        let home = std::env::var("HOME").unwrap();
+        let input = PathBuf::from(&home).join("deck.tex");
+        let path = super::tex_search_path(&input, Path::new("/tmp/work"));
+        let path = path.to_string_lossy();
+        let parent = PathBuf::from(&home);
+        let parent = parent.parent().unwrap().to_string_lossy().into_owned();
+        assert!(
+            !path.contains(&format!("{parent}/:")),
+            "must not put the home directory's parent on the search path: {path}"
+        );
     }
 
     #[test]
