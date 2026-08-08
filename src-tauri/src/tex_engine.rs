@@ -265,7 +265,12 @@ pub(crate) struct Runtime<'a> {
     pub(crate) xelatex: &'a Path,
     pub(crate) dvilualatex: &'a Path,
     pub(crate) dvisvgm: &'a Path,
-    pub(crate) ghostscript_library: &'a Path,
+    /// Absent when Ghostscript is not installed. Only EPS and PostScript
+    /// specials require it; documents without them render identically.
+    pub(crate) ghostscript_library: Option<&'a Path>,
+    /// Set for a bundled dvisvgm, which cannot derive the TeX tree location
+    /// from its own path the way an in-tree copy does.
+    pub(crate) texmf_root: Option<&'a Path>,
     pub(crate) home_directory: &'a Path,
 }
 
@@ -323,12 +328,16 @@ pub fn manifest(
     let output_pattern = output_directory.join("slide-%p.svg");
     let mut final_command = Command::new(runtime.dvisvgm);
     configure_tex_process(&mut final_command, runtime.home_directory);
+    if let Some(root) = runtime.texmf_root {
+        final_command
+            .env("TEXMFROOT", root)
+            .env("TEXMFCNF", root.join("texmf-dist/web2c"));
+    }
+    if let Some(library) = runtime.ghostscript_library {
+        final_command.arg(format!("--libgs={}", library.to_string_lossy()));
+    }
     let dvisvgm_output = final_command
         .current_dir(output_directory)
-        .arg(format!(
-            "--libgs={}",
-            runtime.ghostscript_library.to_string_lossy()
-        ))
         .args([
             "--page=1-",
             "--bbox=papersize",
@@ -438,8 +447,7 @@ mod tests {
         let xelatex = texbin.join("xelatex");
         let dvilualatex = texbin.join("dvilualatex");
         let dvisvgm = texbin.join("dvisvgm");
-        let ghostscript_library =
-            ghostscript_library_path().expect("Homebrew Ghostscript is required");
+        let ghostscript_library = ghostscript_library_path();
         let home_directory = PathBuf::from(std::env::var("HOME").unwrap());
         let result = manifest(
             &input,
@@ -448,7 +456,8 @@ mod tests {
                 xelatex: &xelatex,
                 dvilualatex: &dvilualatex,
                 dvisvgm: &dvisvgm,
-                ghostscript_library: &ghostscript_library,
+                ghostscript_library: ghostscript_library.as_deref(),
+                texmf_root: None,
                 home_directory: &home_directory,
             },
         )

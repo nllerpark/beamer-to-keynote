@@ -123,11 +123,13 @@ fn pdfium_library_path(app: &AppHandle) -> Result<PathBuf, String> {
 
 #[tauri::command]
 fn environment_status(app: AppHandle) -> EnvironmentStatus {
+    // dvisvgm may be bundled (GPL build); the TeX programs never are.
     let tex_tools = ["xelatex", "dvilualatex", "dvisvgm", "kpsewhich"];
     let resolved_tex_tools = tex_tools
         .into_iter()
-        .map(|name| (name, system_tool_path(name).ok()))
+        .map(|name| (name, tool_path(&app, name).ok()))
         .collect::<Vec<_>>();
+    let bundled_renderer = bundled_tool_path(&app, "dvisvgm").is_some();
     let mut tex_engine_paths = resolved_tex_tools
         .iter()
         .filter_map(|(_, path)| path.as_ref())
@@ -138,17 +140,26 @@ fn environment_status(app: AppHandle) -> EnvironmentStatus {
         .filter(|(_, path)| path.is_none())
         .map(|(name, _)| (*name).to_owned())
         .collect::<Vec<_>>();
-    if let Some(path) = process_environment::ghostscript_library_path() {
-        tex_engine_paths.push(path.to_string_lossy().into_owned());
-    } else {
-        missing_tex_tools.push("libgs (brew install ghostscript)".into());
+    let ghostscript = bundled_ghostscript_library(&app)
+        .or_else(process_environment::ghostscript_library_path);
+    let bundled_ghostscript = bundled_ghostscript_library(&app).is_some();
+    match ghostscript {
+        Some(path) => tex_engine_paths.push(path.to_string_lossy().into_owned()),
+        // Ghostscript is only consulted for EPS/PostScript specials, so a
+        // missing libgs is reported without blocking conversion outright.
+        None => missing_tex_tools.push("libgs (brew install ghostscript)".into()),
     }
+
+    let blocking_tools = missing_tex_tools
+        .iter()
+        .filter(|tool| !tool.starts_with("libgs"))
+        .count();
 
     EnvironmentStatus {
         keynote_installed: keynote_path().is_some(),
         native_engine_ready: pdfium_library_path(&app).is_ok_and(|path| path.is_file()),
-        tex_engine_ready: missing_tex_tools.is_empty(),
-        tex_engine_bundled: false,
+        tex_engine_ready: blocking_tools == 0,
+        tex_engine_bundled: bundled_renderer && bundled_ghostscript,
         tex_engine_paths,
         missing_tex_tools,
     }
@@ -487,6 +498,28 @@ fn unique_output_path(source: &Path, output_dir: Option<&str>, mode: ConvertMode
         .unwrap_or(base)
 }
 
+/// Executables shipped inside the GPL build. Absent from the BSD build, which
+/// redistributes no GPL-licensed programs and uses the system copies instead.
+fn bundled_tool_path(app: &AppHandle, name: &str) -> Option<PathBuf> {
+    let resource_directory = app.path().resource_dir().ok()?;
+    let contents = resource_directory.parent()?;
+    [
+        contents.join("MacOS").join(name),
+        resource_directory.join(name),
+    ]
+    .into_iter()
+    .find(|path| path.is_file())
+}
+
+/// Prefers a bundled copy over the system one, so the GPL build is insulated
+/// from whatever dvisvgm the host happens to provide.
+fn tool_path(app: &AppHandle, name: &str) -> Result<PathBuf, String> {
+    if let Some(bundled) = bundled_tool_path(app, name) {
+        return Ok(bundled);
+    }
+    system_tool_path(name)
+}
+
 fn system_tool_path(name: &str) -> Result<PathBuf, String> {
     process_environment::system_tool_candidates(name)
         .find(|path| path.is_file())
@@ -497,10 +530,28 @@ fn system_tool_path(name: &str) -> Result<PathBuf, String> {
         })
 }
 
-fn ghostscript_library_path() -> Result<PathBuf, String> {
-    process_environment::ghostscript_library_path().ok_or_else(|| {
-        "Ghostscript 공유 라이브러리(libgs)를 찾지 못했습니다. `brew install ghostscript`를 실행한 뒤 TeXKey를 다시 시작해 주세요. dvisvgm이 EPS와 PostScript 요소를 빠짐없이 SVG로 변환하는 데 필요합니다.".into()
-    })
+/// Root of the host TeX installation, used to point a relocated dvisvgm at
+/// texmf.cnf and the font maps it would otherwise locate from its own path.
+fn texmf_root_path(kpsewhich: &Path) -> Option<PathBuf> {
+    let mut command = Command::new(kpsewhich);
+    process_environment::configure_tex_process(&mut command, Path::new("/"));
+    let output = command.args(["-var-value=SELFAUTOPARENT"]).output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let root = PathBuf::from(String::from_utf8_lossy(&output.stdout).trim());
+    root.is_dir().then_some(root)
+}
+
+/// Ghostscript shared library vendored into the GPL build, alongside its
+/// relocated dependency closure.
+fn bundled_ghostscript_library(app: &AppHandle) -> Option<PathBuf> {
+    let library = app
+        .path()
+        .resource_dir()
+        .ok()?
+        .join("ghostscript/lib/libgs.dylib");
+    library.is_file().then_some(library)
 }
 
 fn install_bundled_fonts(app: &AppHandle, resource_dir: &Path) -> Result<usize, String> {
@@ -600,10 +651,20 @@ async fn convert_pdf(app: AppHandle, request: ConvertRequest) -> Result<ConvertR
             }
             ConvertMode::TexDirect => {
                 let home_directory = app.path().home_dir().map_err(|error| error.to_string())?;
+                // xelatex/dvilualatex always come from MacTeX: the GPL build
+                // bundles a renderer, not a TeX distribution.
                 let xelatex = system_tool_path("xelatex")?;
                 let dvilualatex = system_tool_path("dvilualatex")?;
-                let dvisvgm = system_tool_path("dvisvgm")?;
-                let ghostscript_library = ghostscript_library_path()?;
+                let dvisvgm = tool_path(&app, "dvisvgm")?;
+                // Optional: only EPS/PostScript specials need it.
+                let ghostscript_library = bundled_ghostscript_library(&app)
+                    .or_else(process_environment::ghostscript_library_path);
+                // A bundled dvisvgm sits outside the TeX tree, so kpathsea
+                // cannot locate texmf.cnf from its own path and would fall
+                // back to running Metafont for every font.
+                let texmf_root = bundled_tool_path(&app, "dvisvgm")
+                    .and_then(|_| system_tool_path("kpsewhich").ok())
+                    .and_then(|kpsewhich| texmf_root_path(&kpsewhich));
                 tex_engine::manifest(
                     &source,
                     &work,
@@ -611,7 +672,8 @@ async fn convert_pdf(app: AppHandle, request: ConvertRequest) -> Result<ConvertR
                         xelatex: &xelatex,
                         dvilualatex: &dvilualatex,
                         dvisvgm: &dvisvgm,
-                        ghostscript_library: &ghostscript_library,
+                        ghostscript_library: ghostscript_library.as_deref(),
+                        texmf_root: texmf_root.as_deref(),
                         home_directory: &home_directory,
                     },
                 )?

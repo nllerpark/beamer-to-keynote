@@ -4,3 +4,7 @@ src-tauri/target/
 src-tauri/gen/
 tmp/
 *.key
+
+# Vendored by scripts/vendor-ghostscript.sh for the GPL build only.
+src-tauri/resources/ghostscript/lib/
+src-tauri/resources/ghostscript/GHOSTSCRIPT-SOURCE.md

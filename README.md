@@ -79,15 +79,29 @@ Then add the following line to the shell profile used by Terminal:
 export PATH="/Library/TeX/texbin:$PATH"
 ```
 
-TeXKey also prepends `/Library/TeX/texbin` itself when it is launched from
-Finder, because GUI applications do not normally inherit the interactive
-shell PATH. The installation is ready when these checks all return paths:
+### How TeXKey resolves these tools
+
+TeXKey does **not** use the interactive shell PATH. GUI applications launched
+from Finder do not inherit it, so TeXKey probes a fixed list of directories and
+takes the first match:
+
+```
+/Library/TeX/texbin → /opt/homebrew/bin → /usr/local/bin → /usr/bin → /bin → /usr/sbin → /sbin
+```
+
+This order matters for `dvisvgm`, which both MacTeX and Homebrew provide. A
+MacTeX copy in `/Library/TeX/texbin` always wins, even when Homebrew has a
+newer one — and because most shells place `/opt/homebrew/bin` *before*
+`/Library/TeX/texbin`, `dvisvgm --version` in Terminal can report a different
+binary than the one TeXKey actually runs. Verify with explicit paths rather
+than `command -v`:
 
 ```sh
-command -v xelatex
-command -v dvilualatex
-command -v kpsewhich
-command -v dvisvgm
+for tool in xelatex dvilualatex kpsewhich dvisvgm; do
+  for dir in /Library/TeX/texbin /opt/homebrew/bin /usr/local/bin /usr/bin; do
+    [ -f "$dir/$tool" ] && { echo "$tool -> $dir/$tool"; break; }
+  done
+done
 kpsewhich beamer.cls
 kpsewhich pgf.sty
 kpsewhich tikzlibraryfit.code.tex
@@ -95,13 +109,78 @@ kpsewhich tcolorbox.sty
 test -f "$(brew --prefix ghostscript)/lib/libgs.dylib"
 ```
 
+The `dvisvgm` line of that output is the binary TeXKey will use. Installing a
+newer dvisvgm with Homebrew has no effect while a MacTeX copy shadows it; to
+adopt the Homebrew build you must remove or upgrade the MacTeX one.
+
+### dvisvgm version
+
+Use a current dvisvgm. Beamer's rounded blocks leave PGF scopes open, and
+TeXKey compensates by injecting closing `</g>` tags into the SVG stream.
+Older dvisvgm releases reject the result and the conversion fails with:
+
+```
+슬라이드 벡터 렌더링에 실패했습니다: XML error: missing closing tag(s): </g>, </g>, </g>
+```
+
+dvisvgm 3.6, as shipped with TeX Live 2026, is verified working. If you see
+this error, check which binary is being resolved by the rules above, then
+upgrade MacTeX or replace the shadowing copy.
+
 A full current MacTeX installation includes the TeX components. Its
 Ghostscript command-line executable does not provide the shared `libgs`
 library that dvisvgm loads for EPS and PostScript specials, so the Homebrew
-Ghostscript installation is also required. If an existing minimal TeX Live
+Ghostscript installation is also required. Note that TeXKey 0.3.1 treats
+`libgs` as a hard prerequisite: direct Beamer conversion stays disabled
+without it, even for documents containing no EPS or PostScript specials that
+would render identically without Ghostscript. If an existing minimal TeX Live
 installation reports a missing package, install the corresponding TeX Live
 package with `tlmgr`; TeXKey does not download or modify the system TeX
 installation.
+
+Dependency status is detected once at launch and cached for the lifetime of
+the process. After installing MacTeX, dvisvgm, or Ghostscript, quit and
+reopen TeXKey — a running instance keeps reporting the tools as missing and
+leaves the convert button disabled.
+
+### Two releases: BSD and GPL
+
+TeXKey ships in two builds. Both share identical conversion code and produce
+byte-identical slides; they differ only in what they redistribute.
+
+| | BSD build | GPL build |
+|---|---|---|
+| Build command | `npm run build` | `npm run build:gpl` |
+| dvisvgm | installed by you | **bundled** (3.6, universal) |
+| Ghostscript | installed by you | **bundled** (libgs + closure) |
+| MacTeX | required | **required** |
+| Added bundle size | — | ~47 MiB |
+| Licence of the distribution | BSD-3-Clause | GPLv3 / AGPLv3 obligations |
+
+The **BSD build** redistributes no GPL-licensed program. dvisvgm is GPL-3.0-or-later
+and Ghostscript is AGPL-3.0-or-later, so shipping either would impose source
+conveyance duties on every download. Installing them yourself keeps the
+released application free of those obligations — which is why the versions
+present on each Mac have to be checked rather than assumed.
+
+The **GPL build** accepts those obligations in exchange for removing the two
+dependencies most prone to per-machine drift. It pins dvisvgm 3.6, so the
+`missing closing tag(s): </g>` failure cannot occur, and removes the Ghostscript
+install step entirely. Its notices and source offers live in
+`src-tauri/resources/tex-engines/` and `src-tauri/resources/ghostscript/`.
+
+**The GPL build is not self-contained.** It bundles a renderer, not a TeX
+distribution: `xelatex`, `dvilualatex`, `kpsewhich`, and every package a
+document imports still come from MacTeX. It removes two of the five
+dependencies, not all five.
+
+Ghostscript is optional in both builds. It is consulted only for EPS and
+PostScript specials; a document containing none renders identically without
+it, so a missing `libgs` no longer blocks conversion.
+
+Run `sh scripts/vendor-ghostscript.sh` to populate the Ghostscript closure
+before a GPL build — `npm run build:gpl` does this for you. The vendored
+libraries are build output and are not tracked in git.
 
 This covers ordinary Beamer, TikZ/PGF, PGFPlots, tcolorbox, and `listings`
 documents. Features that launch non-TeX programs remain external requirements:
@@ -129,9 +208,16 @@ source.
 
 - Apple Silicon Mac running macOS 12 or later
 - Apple Keynote
-- MacTeX for direct Beamer `.tex` conversion
-- Homebrew Ghostscript for complete EPS/PostScript-to-SVG rendering
+- MacTeX for direct Beamer `.tex` conversion, supplying XeLaTeX, LuaLaTeX,
+  `kpsewhich`, and the packages each document imports
+- A current dvisvgm — 3.6 (TeX Live 2026) verified; older builds can fail with
+  `XML error: missing closing tag(s): </g>`
+- Homebrew Ghostscript, required at launch by 0.3.1 and functionally needed
+  for EPS/PostScript-to-SVG rendering
 - Rust, Node.js, and Xcode Command Line Tools for development builds
+
+All four tool dependencies are resolved from a fixed directory list, not from
+the shell PATH; see [How TeXKey resolves these tools](#how-texkey-resolves-these-tools).
 
 ## Building from source
 
