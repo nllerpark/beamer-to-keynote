@@ -71,9 +71,9 @@ notarise_dmg "$dmg_path" "$app_path"
 mv "$dmg_path" "$release_dir/TeXKey_${version}_aarch64_bsd.dmg"
 cp "$source_path" "$release_dir/TeXKey_${version}_source.tar.gz"
 
-# --- GPL build: bundles dvisvgm and Ghostscript -----------------------------
-# Carries GPLv3/AGPLv3 source-conveyance obligations; see the notices under
-# src-tauri/resources/tex-engines and src-tauri/resources/ghostscript.
+# --- GPL build: bundles dvisvgm ---------------------------------------------
+# Carries GPLv3 source-conveyance obligations; see the notices under
+# src-tauri/resources/tex-engines.
 echo "==> building GPL variant"
 npm run build:gpl
 
@@ -81,13 +81,6 @@ if [ ! -d "$app_path" ] || [ ! -f "$dmg_path" ]; then
   echo "error: expected GPL TeXKey app and DMG were not produced" >&2
   exit 1
 fi
-
-# The vendored Ghostscript closure is signed as part of the bundle; verify each
-# library carries a valid signature before the DMG is submitted.
-for library in "$app_path/Contents/Resources/ghostscript/lib/"*.dylib; do
-  [ -f "$library" ] || continue
-  codesign --verify --strict --verbose=1 "$library"
-done
 
 notarise_dmg "$dmg_path" "$app_path"
 mv "$dmg_path" "$release_dir/TeXKey_${version}_aarch64_gpl.dmg"

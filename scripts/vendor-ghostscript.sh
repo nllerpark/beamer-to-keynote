@@ -101,6 +101,20 @@ if versioned != "libgs.dylib":
         check=True,
     )
 
+# install_name_tool invalidates the existing code signature, and arm64 refuses
+# to load a dylib whose signature does not match its contents — the loading
+# process is killed outright. Re-sign ad hoc; the release build replaces these
+# with Developer ID signatures when it signs the bundle.
+for name in sorted(set(closure.values()) | {"libgs.dylib"}):
+    target = os.path.join(destination, name)
+    if not os.path.exists(target):
+        continue
+    subprocess.run(
+        ["codesign", "--force", "--sign", "-", "--timestamp=none", target],
+        check=True, capture_output=True,
+    )
+    subprocess.run(["codesign", "--verify", "--strict", target], check=True)
+
 print(f"vendored {len(closure)} libraries")
 for real in sorted(closure):
     print(f"  {os.path.basename(real)}")

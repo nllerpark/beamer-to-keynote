@@ -1,15 +1,13 @@
 {
   "bundle": {
     "shortDescription": "Convert Beamer and PDF presentations to Keynote",
-    "longDescription": "PDF conversion is self-contained. Direct Beamer conversion bundles dvisvgm and the Ghostscript shared library, and uses XeLaTeX or LuaLaTeX and TeX packages supplied by a system MacTeX installation.",
+    "longDescription": "PDF conversion is self-contained. Direct Beamer conversion bundles dvisvgm, and uses XeLaTeX or LuaLaTeX, TeX packages, and the Ghostscript shared library supplied by the host system.",
     "externalBin": [
       "binaries/dvisvgm"
     ],
     "resources": {
       "resources/dvisvgm-texmf/": "dvisvgm-texmf/",
-      "resources/tex-engines/": "tex-engines/",
-      "resources/ghostscript/lib/": "ghostscript/lib/",
-      "resources/ghostscript/GHOSTSCRIPT-SOURCE.md": "ghostscript/GHOSTSCRIPT-SOURCE.md"
+      "resources/tex-engines/": "tex-engines/"
     }
   }
 }
