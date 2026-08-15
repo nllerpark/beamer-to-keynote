@@ -4,15 +4,6 @@ set -eu
 project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 icon_dir="$project_dir/src-tauri/icons"
 dmg_dir="$project_dir/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg"
-signing_identity=${APPLE_SIGNING_IDENTITY:-Developer ID Application: ITRIX Co., Ltd. (D5UUNR2X89)}
-unsigned=${1:-}
-
-if [ "$unsigned" != "--unsigned" ] && ! security find-identity -v -p codesigning |
-  grep -F "\"$signing_identity\"" >/dev/null; then
-  echo "error: code-signing identity is not installed: $signing_identity" >&2
-  echo "install the Developer ID Application certificate, or use npm run build:unsigned for local testing only" >&2
-  exit 1
-fi
 
 for dmg_path in "$dmg_dir"/*.dmg; do
   [ -e "$dmg_path" ] || continue
@@ -21,7 +12,4 @@ for dmg_path in "$dmg_dir"/*.dmg; do
     xcrun Rez -append dmg-icon.r -o "$dmg_path"
   )
   xcrun SetFile -a C "$dmg_path"
-  if [ "$unsigned" != "--unsigned" ]; then
-    codesign --force --timestamp --sign "$signing_identity" "$dmg_path"
-  fi
 done

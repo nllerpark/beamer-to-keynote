@@ -54,8 +54,7 @@
         "resources/pdfium/lib/libpdfium.dylib"
       ],
       "minimumSystemVersion": "12.0",
-      "entitlements": "Entitlements.plist",
-      "signingIdentity": "Developer ID Application: ITRIX Co., Ltd. (D5UUNR2X89)"
+      "hardenedRuntime": false
     }
   }
 }

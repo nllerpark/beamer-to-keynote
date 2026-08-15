@@ -7,12 +7,12 @@
   "scripts": {
     "tauri": "tauri",
     "dev": "tauri dev",
-    "build": "tauri build --target aarch64-apple-darwin --config src-tauri/tauri.bsd.conf.json && sh scripts/apply-dmg-icon.sh",
-    "build:unsigned": "tauri build --target aarch64-apple-darwin --no-sign --config src-tauri/tauri.bsd.conf.json && sh scripts/apply-dmg-icon.sh --unsigned",
-    "build:bsd": "tauri build --target aarch64-apple-darwin --config src-tauri/tauri.bsd.conf.json && sh scripts/apply-dmg-icon.sh",
-    "build:bsd:unsigned": "tauri build --target aarch64-apple-darwin --no-sign --config src-tauri/tauri.bsd.conf.json && sh scripts/apply-dmg-icon.sh --unsigned",
+    "build": "sh scripts/build-unsigned-macos.sh",
+    "build:unsigned": "sh scripts/build-unsigned-macos.sh",
+    "build:bsd": "sh scripts/build-unsigned-macos.sh",
+    "build:bsd:unsigned": "sh scripts/build-unsigned-macos.sh",
     "package:source": "sh scripts/package-source.sh",
-    "release:macos": "sh scripts/notarize-macos-release.sh"
+    "release:macos": "npm run build && npm run package:source"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.8.5"

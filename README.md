@@ -153,17 +153,17 @@ Run the development application:
 npm run dev
 ```
 
-Create an unsigned local test distribution:
+Create an unsigned distribution:
 
 ```sh
 npm run build:unsigned
 ```
 
-Unsigned artifacts are for local development and QA only. Gatekeeper will
-reject an unsigned download and may show a warning that Apple cannot check it
-for malicious software. TeXKey cannot display recovery instructions from
-inside the app because Gatekeeper blocks the process before it launches. Do
-not distribute an unsigned artifact to end users.
+All macOS artifacts have no Developer ID signature. They use only macOS's
+required ad-hoc executable signature, which carries no certificate, Team ID,
+notarization, or Hardened Runtime. Gatekeeper may show a warning that Apple
+cannot check an unsigned download for malicious software; the user must
+explicitly allow the app to open in macOS privacy settings.
 
 The resulting application and DMG are written below
 `src-tauri/target/aarch64-apple-darwin/release/bundle/`. Building the app
@@ -187,35 +187,23 @@ for the tag.
 
 This archive contains the TeXKey repository at the selected commit.
 
-## Signed macOS builds
+## macOS builds
 
-Build the signed BSD-licensed application:
+Build the unsigned BSD-licensed application:
 
 ```sh
 npm run build
 ```
 
 Artifacts are written below
-`src-tauri/target/aarch64-apple-darwin/release/bundle/`. The build uses the
-configured ITRIX Developer ID identity to sign the application and DMG. The
-regular build command does not submit the result for Apple notarization.
-End-user releases must use the notarized release command below.
-
-Create a notarized end-user release:
+`src-tauri/target/aarch64-apple-darwin/release/bundle/`. The build passes
+`--no-sign`, does not enable Hardened Runtime, and does not sign the DMG. It
+adds only an ad-hoc executable signature required by Apple Silicon macOS. To
+create both the unsigned app/DMG and source archive, run:
 
 ```sh
-xcrun notarytool store-credentials TeXKey \
-  --apple-id "APPLE_ID" \
-  --team-id "D5UUNR2X89"
-
-APPLE_NOTARY_PROFILE=TeXKey npm run release:macos
+npm run release:macos
 ```
-
-The release script builds and signs the application, creates the source
-archive and checksum, submits the DMG, waits for Apple’s response, staples the
-ticket, and verifies the resulting artifact with both `codesign` and
-Gatekeeper. It fails before building when the configured Developer ID
-Application certificate and private key are not installed.
 
 ## Repository structure
 
