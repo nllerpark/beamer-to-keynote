@@ -1,5 +1,10 @@
 {
+  "productName": "TeXKey BSD",
+  "identifier": "app.texkey.converter.bsd",
   "bundle": {
+    "resources": {
+      "../LICENSE": "licenses/BSD-3-Clause.txt"
+    },
     "shortDescription": "Convert Beamer and PDF presentations to Keynote",
     "longDescription": "PDF conversion is self-contained. Direct Beamer conversion uses XeLaTeX or LuaLaTeX, dvisvgm, and TeX packages supplied by a system MacTeX installation."
   }

@@ -1,0 +1,15 @@
+{
+  "productName": "TeXKey GPL",
+  "identifier": "app.texkey.converter.gpl",
+  "bundle": {
+    "externalBin": ["binaries/dvisvgm"],
+    "resources": {
+      "../LICENSE": "licenses/BSD-3-Clause.txt",
+      "resources/tex-engines/GPL-3.0.txt": "licenses/GPL-3.0.txt",
+      "resources/tex-engines/THIRD_PARTY_NOTICES.md": "licenses/THIRD_PARTY_NOTICES.md",
+      "resources/tex-engines/DVISVGM-SOURCE.md": "licenses/DVISVGM-SOURCE.md"
+    },
+    "shortDescription": "Convert Beamer and PDF presentations to Keynote",
+    "longDescription": "PDF conversion is self-contained. Direct Beamer conversion includes dvisvgm under GPL-3.0-or-later and uses XeLaTeX or LuaLaTeX supplied by a system MacTeX installation."
+  }
+}

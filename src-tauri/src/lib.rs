@@ -121,6 +121,18 @@ fn pdfium_library_path(app: &AppHandle) -> Result<PathBuf, String> {
         .ok_or("PDFium 네이티브 엔진이 앱에 포함되지 않았습니다.".into())
 }
 
+fn dvisvgm_path(app: &AppHandle) -> Result<PathBuf, String> {
+    let bundled = app
+        .path()
+        .resource_dir()
+        .ok()
+        .and_then(|resources| resources.parent().map(|contents| contents.join("MacOS/dvisvgm-aarch64-apple-darwin")));
+    bundled
+        .filter(|path| path.is_file())
+        .or_else(|| system_tool_path("dvisvgm").ok())
+        .ok_or_else(|| "dvisvgm 실행 파일을 찾지 못했습니다. BSD 버전은 MacTeX를 설치해 주세요.".into())
+}
+
 #[tauri::command]
 fn environment_status(app: AppHandle) -> EnvironmentStatus {
     let tex_tools = ["xelatex", "dvilualatex", "dvisvgm", "kpsewhich"];
@@ -602,7 +614,7 @@ async fn convert_pdf(app: AppHandle, request: ConvertRequest) -> Result<ConvertR
                 let home_directory = app.path().home_dir().map_err(|error| error.to_string())?;
                 let xelatex = system_tool_path("xelatex")?;
                 let dvilualatex = system_tool_path("dvilualatex")?;
-                let dvisvgm = system_tool_path("dvisvgm")?;
+                let dvisvgm = dvisvgm_path(&app)?;
                 let ghostscript_library = ghostscript_library_path()?;
                 tex_engine::manifest(
                     &source,

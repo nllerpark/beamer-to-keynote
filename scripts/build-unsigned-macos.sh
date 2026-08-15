@@ -2,16 +2,22 @@
 set -eu
 
 project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+variant=${1:-bsd}
 target=aarch64-apple-darwin
 bundle_dir="$project_dir/src-tauri/target/$target/release/bundle"
-app_path="$bundle_dir/macos/TeXKey.app"
 dmg_dir="$bundle_dir/dmg"
 version=$(node -p "require('$project_dir/package.json').version")
-dmg_path="$dmg_dir/TeXKey_${version}_aarch64.dmg"
+case "$variant" in
+  bsd) product_name="TeXKey BSD"; config_path=src-tauri/tauri.bsd.conf.json; asset_name="TeXKey_BSD" ;;
+  gpl) product_name="TeXKey GPL"; config_path=src-tauri/tauri.gpl.conf.json; asset_name="TeXKey_GPL" ;;
+  *) echo "usage: $0 {bsd|gpl}" >&2; exit 2 ;;
+esac
+app_path="$bundle_dir/macos/$product_name.app"
+dmg_path="$dmg_dir/${asset_name}_${version}_aarch64.dmg"
 
 cd "$project_dir"
 ./node_modules/.bin/tauri build --target "$target" --no-sign \
-  --config src-tauri/tauri.bsd.conf.json
+  --config "$config_path"
 
 # `--no-sign` avoids Developer ID signing, but Apple Silicon macOS still
 # requires a Mach-O code-signature region to execute an app.  Sign nested
